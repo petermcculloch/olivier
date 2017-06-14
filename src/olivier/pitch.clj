@@ -432,7 +432,8 @@
 
 
 (defn iterate-chords [transition-state]
-  (let [{:keys [start-chord rule-next chordlist pitchset-gen]} (get-rule-for-chords transition-state)
+  (let [t (get-rule-for-chords transition-state)
+        {:keys [start-chord rule-next chordlist pitchset-gen]} t
         next-chord (apply-chord-transition start-chord rule-next)]
     (assoc t :start-chord (if (empty next-chord) start-chord next-chord),
              :target-pitchset (pitchset-gen)                ; next-pitchset)
