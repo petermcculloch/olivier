@@ -6,7 +6,6 @@
         [clojure.set :only (intersection difference index select project)]
         [markov.core :as markov]))
 
-(defmacro DBG [x] `(let [x# ~x] (println "dbg:" '~x "=" x#) x#))
 
 
 ;==============================================================================
@@ -470,9 +469,6 @@
     :rule-start      nil,
     :rule-end        nil,
     :rules           (build-chord-rules (build-chord-transition-database played-progressions))}))))
-
-
-
 
 (def counter (atom 0))
 ; (def next-pitchset (fn [] (do (swap! counter inc) (nth generate-next-pitchset (dec @counter)))))
