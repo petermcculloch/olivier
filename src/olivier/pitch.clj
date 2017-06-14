@@ -3,7 +3,11 @@
             [clojure.math.combinatorics :as combo]
             [clojure.zip :as zip])
   (:use [olivier.sequences :only (rotations positions rev)]
-            [clojure.set :only (intersection difference)]))
+        [clojure.set :only (intersection difference index select project)]
+        [markov.core :as markov]))
+
+(defmacro DBG [x] `(let [x# ~x] (println "dbg:" '~x "=" x#) x#))
+
 
 ;==============================================================================
 ;                            Pitch Functions
@@ -56,7 +60,7 @@
 
 (defn pcs-transpose
   ([pcs amt] (pcs-transpose 12 pcs amt))
-  ([modn pcs amt] (map (partial pc-transpose modn amt) pcs )))
+  ([modn pcs amt] (map (partial pc-transpose modn amt) pcs)))
 
 (defn pc-invert
   "Invert pitchclass"
@@ -74,19 +78,20 @@
      (sort (map #(- (apply max pcs) %) pcs)))))
 
 
+
 ;==============================================================================
 ;                           Bit Operations
 ;==============================================================================
 
 (defn pitches->bits
   ([coll] (pitches->bits coll 12))
-  ([coll n] (let [hs (apply hash-set (mapv pitchclass coll))
+  ([coll n] (let [hs  (apply hash-set (mapv pitchclass coll))
                   pcs (range n)] (mapv #(if (contains? hs %) 1 0) pcs))))
 
 (defn bits->pcs [pc-vec] (filter #(>= % 0) (mapv #(- (* % %2) 1) pc-vec (range 1 (count pc-vec)))))
 
 
-(defn bit-rotate [n bits] (let [len (count bits)
+(defn bit-rotate [n bits] (let [len  (count bits)
                                 nmod (mod (+ (mod (- n) len) len) len)]
                             (vec (take len (drop nmod (cycle bits))))))
 (defn- neg [x] (- x))
@@ -98,9 +103,9 @@
 (defn bit-invert [pc-vec] (vec (rseq pc-vec)))
 
 (defn bit-rotations [pitches subdiv]
-  (let [pcs (mapv (partial pitchclass subdiv) pitches)
-        inv-pcs (mapv pc-invert pitches)
-        bits (pitches->bits pcs subdiv)
+  (let [pcs      (mapv (partial pitchclass subdiv) pitches)
+        inv-pcs  (mapv pc-invert pitches)
+        bits     (pitches->bits pcs subdiv)
         inv-bits (pitches->bits inv-pcs subdiv)
         res      (zipmap
                    (concat (mapv #(bit-rotate (neg %) bits) pcs) (mapv #(bit-rotate % inv-bits) inv-pcs))
@@ -111,6 +116,14 @@
 ;==============================================================================
 ;                       Pitchset Analysis and Operations
 ;==============================================================================
+
+
+(defn symmetrical-transpositions [modn pcs]
+  (let [pcs            (map (partial pitchclass modn) pcs)
+        pcs-set        (apply hash-set pcs)
+        transpositions (for [x (range 0 modn)]
+                         (mapv #(pitchclass modn (+ x %)) pcs))]
+    (filterv #(= (apply hash-set %) pcs-set) transpositions)))
 
 (defn list-of-intervals
   ([pcs] (list-of-intervals pcs 12))
@@ -124,10 +137,10 @@
 (defn normal-form
   ([pcs] (normal-form 12 pcs))
   ([modn pcs]
-   (let [pcs (sort (map pitchclass pcs))
-         intervals (pcs->intervals modn (map #(- % (apply min pcs)) pcs))
-         rots (concat (rotations intervals) (rotations (reverse intervals)))
-         forms (sort-by (comp last vec) (map intervals->pcs rots))
+   (let [pcs        (sort (map pitchclass pcs))
+         intervals  (pcs->intervals modn (map #(- % (apply min pcs)) pcs))
+         rots       (concat (rotations intervals) (rotations (reverse intervals)))
+         forms      (sort-by (comp last vec) (map intervals->pcs rots))
          candidates (sort-by vec (first (partition-by last forms)))] (vec (first candidates)))))
 
 
@@ -161,57 +174,62 @@
 (defn rotations-and-inversions
   ([pcs] (rotations-and-inversions 12 pcs))
   ([modn pcs]
-  (let [intervals (pcs->intervals modn pcs)
-        rots (vec (concat (rotations intervals) (rotations (reverse intervals))))]
-    (mapv (comp vec (partial intervals->pcs false)) (sort left-packer (vec (distinct (mapv vec rots))))))))
+   (let [intervals (pcs->intervals modn pcs)
+         rots      (vec (concat (rotations intervals) (rotations (reverse intervals))))]
+     (mapv (comp vec (partial intervals->pcs false)) (sort left-packer (vec (distinct (mapv vec rots))))))))
 
 (defn all-transpositions
   "Calculate all transpositions for a pitchset"
   ([pcs] (all-transpositions 12 pcs))
   ([modn pcs]
-   (map (fn [x] (sort (mapv #(pitchclass (+ % x)) pcs))) (range modn))))
+   (map (fn [x] (sort (mapv #(pitchclass modn (+ % x)) pcs))) (range modn))))
 
 
 (defn in-common
   "Find common pitches across inversions and transpositions"
   ([pcs-a pcs-b] (in-common 12 pcs-a pcs-b))
   ([modn pcs-a pcs-b]
-  (let [set-a (into #{} pcs-a)
-        v (sort-by (comp - count second)
-                   (map
-                     #(vector % (intersection set-a (into #{} %)))
-                     (rotations-and-inversions modn pcs-b)))
-        groups (partition-by (comp count last) v)]
-    {:best {:pc (ffirst v)
-            :shared (second (first v))
-            :count (count (second (first v)))
-            }
-     :groups groups}
-    )))
+   (let [set-a  (into #{} pcs-a)
+         v      (sort-by (comp - count second)
+                         (map
+                           #(vector % (intersection set-a (into #{} %)))
+                           (rotations-and-inversions modn pcs-b)))
+         groups (partition-by (comp count last) v)]
+     {:best   {:pc     (ffirst v)
+               :shared (second (first v))
+               :count  (count (second (first v)))
+               }
+      :groups groups}
+     )))
 
 
 (defn label-pcs
   "Produces a map which converts pitchclasses into set-numbers.
    Handles edge-cases with chromatic/wholetone/diminished/augmented/tritone collections
    by making sure the lowest pitch-class in the set corresponds to the lowest note in the chord
-   when
-
-  "
-  [pitches]
-  (let [pc-orig            (distinct (sort (map pitchclass pitches)))
-        pc-transp0         (map #(- % (apply min pc-orig)) pc-orig)
-        orig-intervals     (vec (pcs->intervals pc-orig))
-        pc-normal          (normal-form pc-transp0)
-        intervals-norm     (vec (pcs->intervals pc-normal))
-        rot-norm           (rotations intervals-norm)
-        rot-inv            (rotations (rseq intervals-norm))
-        is-inverted?       (not-any? #(= orig-intervals (vec %)) rot-norm)
-        v                  (if is-inverted?
-                             (nth (partition (count pc-normal) 1 (cycle (reverse pc-normal)))
-                                  (first (positions #(= (vec %) orig-intervals) rot-inv)))
-                             (nth (partition (count pc-normal) 1 (cycle pc-normal))
-                                  (first (positions #(= (vec %) orig-intervals) rot-norm))))]
-    (apply sorted-map (interleave pc-orig v))))
+   when all intervals are equal and sum to 12"
+  ([pitches] (label-pcs 12 pitches))
+  ([modn pitches]
+   (let [pc-orig            (distinct (sort (map pitchclass pitches)))
+         pc-transp0         (map #(- % (apply min pc-orig)) pc-orig)
+         orig-intervals     (vec (pcs->intervals pc-orig))
+         pc-normal          (normal-form pc-transp0)
+         intervals-norm     (vec (pcs->intervals pc-normal))
+         rot-norm           (rotations intervals-norm)
+         rot-inv            (rotations (rseq intervals-norm))
+         is-inverted?       (not-any? #(= orig-intervals (vec %)) rot-norm)
+         v                  (if is-inverted?
+                              (nth (partition (count pc-normal) 1 (cycle (reverse pc-normal)))
+                                   (first (positions #(= (vec %) orig-intervals) rot-inv)))
+                              (nth (partition (count pc-normal) 1 (cycle pc-normal))
+                                   (first (positions #(= (vec %) orig-intervals) rot-norm))))
+         even-distribution? (and (= 1 (count (distinct intervals-norm)))
+                                 (= 12 (* (first intervals-norm) (inc (count intervals-norm)))))]
+     (apply sorted-map (interleave
+                         (if (> (count (symmetrical-transpositions modn pc-normal)) 1)
+                           (map (partial pitchclass modn) (reductions + (first pitches) intervals-norm))
+                           pc-orig)
+                         v)))))
 
 ;; Examples drawn from David Cope's "The Algorithmic Composer", page 90.
 ;; (label-pcs [36 50 69 77])
@@ -222,27 +240,27 @@
 (pcs-invert true [2 3 6 9])
 
 (defn- find-closest [x coll]
-  (let [distfn (fn [y] (map #(math/abs (- y %)) coll))
-        top (apply max coll)
-        bottom (apply min coll)
+  (let [distfn    (fn [y] (map #(math/abs (- y %)) coll))
+        top       (apply max coll)
+        bottom    (apply min coll)
         distances (sort-by second
                            (map vector coll (distfn x) (map (partial min) (distfn top) (distfn bottom))))
-        min-dist (apply min (map second distances))
+        min-dist  (apply min (map second distances))
         distances (filter #(= min-dist (second %)) distances)
-        result (map first (sort-by (juxt second last) distances))]
+        result    (map first (sort-by (juxt second last) distances))]
     (first result)
     ))
 
 ;; Close but not quite there.
 (defn lengthen-if-needed [modn a b]
   (if (not= (count a) (count b))
-    (let [octaves (sort (distinct (flatten (map (juxt identity dec)
-                                                (map #(math/floor (/ % modn)) (concat a b))))))
-          [a b] (if (> (count a) (count b)) [b a] [a b]) ; rebind so a is the smaller set now
+    (let [octaves      (sort (distinct (flatten (map (juxt identity dec)
+                                                     (map #(math/floor (/ % modn)) (concat a b))))))
+          [a b] (if (> (count a) (count b)) [b a] [a b])    ; rebind so a is the smaller set now
           search-space (apply sorted-set (for [x a oct octaves]
                                            (+ x (* oct modn))))
-          missing (difference (apply hash-set (map #(find-closest % search-space) b)) (apply hash-set a))
-          results (sort (concat a (map #(find-closest % search-space) missing)))
+          missing      (difference (apply hash-set (map #(find-closest % search-space) b)) (apply hash-set a))
+          results      (sort (concat a (map #(find-closest % search-space) missing)))
           ]
       results) a))
 
@@ -262,31 +280,30 @@
   "Where a and b are chords of equal length"
   ([a b] (create-rule 12 a b))
   ([modn a b]
-  (let [a (lengthen-if-needed modn a b)
-        b (lengthen-if-needed modn b a)
-        a-pc (map (label-pcs a) (map pitchclass a))
-        b-pc (map (label-pcs b) (map pitchclass b))
-        dist (map - b a)
-        chan (range (count b))] ; Uses zero-based counting, rather than Cope's 1-based
-      (mapv #(vector [% %2] %3 %4) a-pc b-pc dist chan))))
-
+   (let [a    (lengthen-if-needed modn a b)
+         b    (lengthen-if-needed modn b a)
+         a-pc (map (label-pcs a) (map pitchclass a))
+         b-pc (map (label-pcs b) (map pitchclass b))
+         dist (map - b a)
+         chan (range (count b))]                            ; Uses zero-based counting, rather than Cope's 1-based
+     (mapv #(vector [% %2] %3 %4) a-pc b-pc dist chan))))
 
 (defn- synthesize-rule
   "Uses voice-leading from rule-a on pitch material from rule-b"
   [rule-a rule-b]
-  (let [sa (sort-by ffirst rule-a)
-        sb (sort-by ffirst rule-b)
-        sa-idxs (map last sa)
-        idxs (map last (sort-by first (partition 2 (map last (interleave sb sa)))))
+  (let [sa        (sort-by ffirst rule-a)
+        sb        (sort-by ffirst rule-b)
+        sa-idxs   (map last sa)
+        idxs      (map last (sort-by first (partition 2 (map last (interleave sb sa)))))
         edit-item (fn [coll new-idx] (assoc coll 2 new-idx)) ; 2 is index of last value
-        new-rule (sort-by last (mapv #(edit-item % %2) rule-b idxs))]
+        new-rule  (sort-by last (mapv #(edit-item % %2) rule-b idxs))]
     new-rule))
 
 (defn- apply-chord-transition
   "Given chord-a and a rule for the voice-leading for the pitchsets of a->b,
    produce chord-b"
   [chord-a rule-b]
-  (map #(+ % (second %2)) chord-a rule-b)
+  (mapv #(+ % (second %2)) chord-a rule-b)
 
   )
 
@@ -297,80 +314,20 @@
 
 (defn- make-chord-keys [chord]
   (let [pcs (map pitchclass chord)
-        v (map #((label-pcs pcs) %) pcs)
-        sv (sort v)]
+        v   (mapv #((label-pcs pcs) %) pcs)
+        sv  (vec (distinct (sort v)))]
     {:sorted sv :voiced v :played chord}))
-
-(comment
-(def c1 [60 63 65 68]) ; p 89
-(def c2 [62 65 63 67])
-(def c3 [36 50 69 77]) ; p 90
-(def c4 [38 48 71 76])
-(def c5 [45 61 64 78])
-(def c6 [50 58 67 76])
-(def c7 [36 50 69 77])
-(def c8 [39 48 66 82])
-;; return mapping of pitch to pc in normal-vec
-(def c9 [29 50 74])
-
-(lengthen-if-needed c8 c9)
-(lengthen-if-needed c9 c8)
-
-
-(create-rule c1 c2)
-(create-rule c3 c4)
-(create-rule c5 c6)
-(create-rule c7 c8))
-
-(def ii7 [50 57 65 72])
-(def V7b9 [50 56 65 71])
-(def Imaj7 [48 55 64 71])
-(def I [48 55 64 72])
-(def IVmaj7 [48 53 63 69])
-(def iii7 [52 59 62 67])
-(def vi7 [52 57 60 67])
-
-(def ii7-alt [53 60 69 74])
-(def V7b9-alt [53 59 68 74])
-
-(def rule-ii-V (create-rule ii7 V7b9))
-(def rule-ii-V-alt (create-rule ii7-alt V7b9))
-(apply-chord-transition ii7-alt (synthesize-rule rule-ii-V-alt rule-ii-V))
-
-
-(def chord-progressions (partition 2 1 [ii7 V7b9 Imaj7 IVmaj7 iii7 vi7 ii7 Imaj7 ii7 iii7 IVmaj7]))
-(def chord-progressions (combo/combinations [ii7 V7b9 Imaj7 IVmaj7 iii7 vi7 ii7-alt I Imaj7 ii7 iii7 IVmaj7] 2))
-
-
-
-(def chord-rules (apply sorted-set (map (partial apply create-rule) chord-progressions)))
-
 
 
 (defn create-rule-map [rules]
-  (let [key-rules (map extract-pitchsets-from-rule rules)]
-    (loop [rs rules results {}]
-      (if (empty? rs)
-        results
-        (let [r (first rs)
-              [a-pcs b-pcs] (map distinct (extract-pitchsets-from-rule r))
-              [sa-pcs sb-pcs] (mapv sort [a-pcs b-pcs])]
-          (recur (next rs) (assoc-in results [{:pitchset-start sa-pcs} {:pitchset-end sb-pcs} {:voiced-start a-pcs} {:voiced-end b-pcs}] r)))))))
-
-;
-(defn- find-nested
-  "From: https://stackoverflow.com/questions/28091305/find-value-of-specific-key-in-nested-map"
-  [m k]
-  (->> (tree-seq map? vals m)
-       (filter map?)
-       (some k)))
-
-(defn- find-all-nested
-  [m k]
-  "From: https://stackoverflow.com/questions/28091305/find-value-of-specific-key-in-nested-map"
-  (->> (tree-seq map? vals m)
-       (filter map?)
-       (keep k)))
+  (apply hash-set (for [r rules]
+                    (let [[a-pcs b-pcs] (extract-pitchsets-from-rule r)
+                          [sa-pcs sb-pcs] (mapv (comp vec sort) [a-pcs b-pcs])]
+                      {:pitchset-start (vec (distinct sa-pcs)),
+                       :pitchset-end   (vec (distinct sb-pcs)),
+                       :voiced-start   (vec a-pcs),
+                       :voiced-end     (vec b-pcs),
+                       :rule           r}))))
 
 (defn map-zipper [m]
   (zip/zipper
@@ -383,7 +340,7 @@
     m))
 
 (defn find-voicing-to-any-chords [rule-map voiced-a]
-  "Returns a map of rules with :voiced-end as key"
+  "Returns a map of rules with :voiced-start as key"
   (loop [z (map-zipper rule-map) coll []]
     (if (zip/end? z)
       (if (empty? coll) coll (apply merge (map second coll)))
@@ -393,38 +350,156 @@
                  coll
                  (conj coll (zip/node z))))))))
 
+(defn find-voicing-to-any-chords [rule-set voiced-a]
+  (select #(= (:voiced-start %) voiced-a) rule-set))
+
+
+(defn find-pitchset-combinations-with-voicing [rule-map pcs-a pcs-b voicing-a]
+  (get-in rule-map [{:pitchset-start pcs-a} {:pitchset-end pcs-b} {:voiced-start voicing-a}]))
+
 
 (defn find-pitchset-combinations [rule-map pcs-a pcs-b]
   (get-in rule-map [{:pitchset-start pcs-a} {:pitchset-end pcs-b}]))
+
 
 (defn find-all-voicings-of-chords [rule-map pcs-a pcs-b]
   (let [chord-combinations (find-pitchset-combinations rule-map pcs-a pcs-b)]
     (mapcat vals (merge (apply concat (map #(for [kvs %] (apply hash-map kvs)) (vals chord-combinations)))))))
 
-(defn get-rule-for-chords [rules current-chord next-pitch-set  prev-chord]
-  (let [rule-map  (create-rule-map rules)
-        {sorted-a :sorted voiced-a :voiced} (make-chord-keys current-chord)
-        {sorted-b :sorted} (make-chord-keys next-pitch-set)
 
+(defn find-pitchset-combinations-with-voicing [rule-set pcs-a pcs-b voiced-a]
+  (select #(and (= (:voiced-start %) voiced-a)
+                (= (:pitchset-start pcs-a))
+                (= (:pitchset-end pcs-b))) rule-set))
+
+
+(defn find-pitchset-combinations [rule-set pcs-a pcs-b]
+  (select #(and (= (:pitchset-start pcs-a))
+                (= (:pitchset-end pcs-b))) rule-set))
+
+
+(defn find-all-voicings-of-chords [rule-set pcs-a pcs-b]
+  (select #(and (= (:pitchset-start pcs-a))
+                (= (:pitchset-end pcs-b)))
+          rule-set))
+
+
+(defn get-rule-for-chords [transition-state]
+  (let [{:keys [rules start-chord target-pitchset]} transition-state
+        rule-set  (create-rule-map rules)
+        {sorted-a :sorted voiced-a :voiced} (make-chord-keys start-chord)
+        {sorted-b :sorted} (make-chord-keys target-pitchset)
         ; If there is existing voicing, use that chord
         ; Otherwise build a rule with
         ; 1. the exact voicing of the first chord to the next pitch set OR any chord
         ; 2. any voicing of the first chord to the second chord
-        voicings1 (find-voicing-to-any-chords rule-map voiced-a)
-        voicing1  (if (empty? voicings1) nil (rand-nth (vals voicings1)))     ; or randomly choose
-        voicings2 (find-all-voicings-of-chords rule-map sorted-a sorted-b)
-        voicing2  (if (empty? voicings2) nil (rand-nth voicings2))
+        voicings1 (select #(= (:voiced-start %) voiced-a) rule-set)
+        voicing1  (if (seq voicings1)
+                    (if-let [exact (seq (select #(= (:pitchset-end %) sorted-b) voicings1))]
+                      (:rule (first exact)) (:rule (rand-nth (vec voicings1)))) nil)
+        voicings2 (select #(and (= (:pitchset-start %) sorted-a)
+                                (= (:pitchset-end %) sorted-b)) rule-set)
+        voicing2  (if (seq voicings2)
+                    (if-let [exact (seq (select #(= (:voiced-start %) voiced-a) voicings2))]
+                      (:rule (first exact)) (:rule (rand-nth (vec voicings2)))) nil)
+        rule1->2 (if (= voicing1 voicing2) voicing1 (synthesize-rule voicing1 voicing2))
+        rule2->1 (if (= voicing1 voicing2) voicing1 (synthesize-rule voicing1 voicing2))
+        new-rules (if (and (not= rule1->2 rule2->1) (every? not-empty [rule1->2 rule2->1]))
+                    [rule1->2 rule2->1] [])
         ]
-    {:rule-start voicing1 :rule-end voicing2 :rule (if (and voicing1 voicing2)
-                                                     (synthesize-rule voicing1 voicing2)
-                                                     nil)
-     }))
+    (assoc transition-state :start-chord start-chord,
+                            :target-pitchset target-pitchset,
+                            :rule-start voicing1,
+                            :rule-end voicing2,
+                            :new-rules new-rules
+                            :rule-next rule1->2
+                            :rules (if (not-empty new-rules) (apply conj rules new-rules) rules))))
 
+
+
+(defn build-chord-transition-database [progs]
+  (partition 2 1 progs))
+
+(defn build-chord-rules [chord-transitions]
+  (apply sorted-set (map (partial apply create-rule) chord-transitions)))
+
+(def chromatic-progressions
+  [[48 55 64 72] [48 57 65 72] [50 57 65 72] [50 55 65 71] [52 59 62 71] [52 57 60 69] [50 57 60 65] [52 56 59 64]
+   [52 57 60 69] [54 57 64 69] [55 59 62 67] [52 59 68 71] [57 60 69 72] [57 61 67 73] [53 62 65 74] [56 62 65 74]
+   [57 64 67 72] [57 63 67 72] [57 62 66 72] [57 62 65 72] [56 62 65 71] [55 62 65 71] [55 60 64 71] [54 60 64 71]
+   [54 60 64 69] [54 59 63 69] [52 59 64 68] [50 59 62 65] [50 59 62 67] [48 55 64 67] [52 60 67 72] [53 60 69 72]
+   [53 62 69 74] [52 59 68 76] [57 64 67 72] [50 57 69 77] [52 59 68 76] [53 60 69 72] [50 57 72 81] [52 60 72 79]
+   [53 62 69 72] [55 59 67 74] [52 60 67 72] [51 60 67 72] [50 60 66 72] [49 60 65 72] [48 55 64 72] [53 60 64 69]
+   [52 59 62 67] [50 57 60 65] [48 55 59 64] [47 53 57 62] [52 56 59 64] [48 57 60 64] [49 57 64 67] [50 57 62 65]
+   [50 59 62 65] [48 53 60 64] [47 53 57 62] [52 56 59 62] [57 61 61 64] [59 62 62 66] [57 61 64 68] [59 62 66 69]
+   [61 64 68 71] [62 66 69 73] [62 65 69 72] [55 62 65 71] [55 60 64 71] [54 60 64 69] [54 59 63 69] [52 59 62 68]
+   [52 58 62 67] [52 57 61 67] [50 57 60 65] [50 56 60 65] [50 55 59 65] [48 55 59 64] ])
+
+(def played-progressions
+  [[48 55 60 64]
+   [50 57 60 65]   [52 59 62 67]   [53 60 64 69]   [52 59 62 67]   [52 57 60 67]   [57 64 67 72]   [59 62 67 74]   [60 64 67 76]
+   [53 60 69 76]   [53 62 69 76]   [53 62 69 74]   [52 60 67 74]   [52 60 67 71]   [52 60 67 72]   [53 60 69 72]   [53 62 69 72]
+   [55 62 67 71]   [59 62 67 71]   [53 62 69 77]   [50 57 69 77]   [52 60 67 76]   [57 64 67 76]   [53 62 69 74]   [55 62 71 74]
+   [57 64 67 72]   [52 60 64 67]   [53 60 65 69]   [50 57 65 72]   [55 62 67 71]   [53 62 67 71]   [52 60 67 76]   [53 62 69 77]
+   [55 64 67 71]   [57 64 67 72]   [59 65 69 74]   [59 64 68 74]   [57 64 67 72]   [52 60 67 72]   [53 60 69 72]   [55 64 67 72]
+   [56 64 71 74]   [57 64 69 72]   [56 64 71 74]   [55 60 72 76]   [54 64 69 72]   [55 60 67 72]   [53 62 72 74]   [52 60 72 76]
+   [53 60 69 72]   [55 60 67 72]   [55 62 67 71]   [53 62 67 71]   [52 60 67 71]   [53 60 64 69]   [52 59 62 67]   [50 57 60 65]
+   [48 55 59 64]   [53 60 64 69]   [48 55 59 64]   [53 60 64 69]   [57 65 69 76]   [55 64 67 74]   [57 62 65 72]   [55 60 67 71]
+   [57 64 67 72]   [57 62 65 72]   [55 62 65 71]   [48 60 64 72]   [48 55 67 72]   [48 57 60 64]   [48 53 57 60]   [48 52 55 60]
+   ])
+
+
+
+(def counter (atom 0))
+
+(defn initialize-transition
+  ([progressions] (initialize-transition progressions (first progressions)))
+  ([progressions start-chord] (initialize-transition progressions
+                                                     start-chord
+                                                     (progressions (inc (.indexOf progressions start-chord)))))
+  ([progressions start-chord next-chord]
+   (do (reset! counter 0)
+       (let [pc-weights (markov/build-from-coll (mapv (fn [xs] (mapv pitchclass xs)) progressions))
+             pc-seq (lazy-seq (markov/generate-walk pc-weights))]
+   {
+    :pitchset-seq    pc-seq
+    :pitchset-gen    (fn [] (do (swap! counter inc) (nth pc-seq (dec @counter))))
+    :start-chord     start-chord,
+    :target-pitchset (map pitchclass next-chord),
+    :rule-next       nil,
+    :rule-start      nil,
+    :rule-end        nil,
+    :rules           (build-chord-rules (build-chord-transition-database played-progressions))}))))
+
+
+
+
+(def counter (atom 0))
+; (def next-pitchset (fn [] (do (swap! counter inc) (nth generate-next-pitchset (dec @counter)))))
+
+(defn iterate-chords [transition-state]
+  (let [t (get-rule-for-chords transition-state)
+        {:keys [rules start-chord target-pitchset rule-next chordlist pitchset-gen]} t
+        next-chord (DBG (apply-chord-transition start-chord rule-next))
+        ]
+    (assoc t :start-chord (DBG (if (empty next-chord) start-chord next-chord)),
+             :target-pitchset (DBG (pitchset-gen)); next-pitchset)
+             :chordlist (conj chordlist next-chord))))
+             ;:rules (apply conj rules[(create-rule start-chord next-chord)
+             ;                         (create-rule next-chord start-chord)]))))
+
+(defn demo-chord-output
+  ([] (demo-chord-output chromatic-progressions))
+  ([progressions] (demo-chord-output progressions 300))
+  ([progressions n]
+   (let [m (initialize-transition progressions)
+         chords (:chordlist (nth (iterate iterate-chords m)n))]
+     (filterv not-empty chords)
+     )))
 
 (defn- print-wide [m]
   (binding [clojure.pprint/*print-right-margin* 200] (clojure.pprint/pprint m)))
 
-(def chord-rule-map (create-rule-map chord-rules))
 
-(map #((label-pcs ii7) (pitchclass %)) ii7)
+
 

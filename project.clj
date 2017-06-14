@@ -7,7 +7,7 @@
                  [org.clojure/math.numeric-tower "0.0.4"]
                  [org.clojure/data.generators "0.1.2"]
                  [org.clojure/math.combinatorics "0.1.1"]
-                 ]
+                 [janiczek/markov "0.3.1"]]
   :main ^:skip-aot olivier.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})
