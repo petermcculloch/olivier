@@ -298,13 +298,11 @@
         new-rule  (sort-by last (mapv #(edit-item % %2) rule-b idxs))]
     new-rule))
 
-(defn- apply-chord-transition
+(defn apply-chord-transition
   "Given chord-a and a rule for the voice-leading for the pitchsets of a->b,
    produce chord-b"
   [chord-a rule-b]
-  (mapv #(+ % (second %2)) chord-a rule-b)
-
-  )
+  (mapv #(+ % (second %2)) chord-a rule-b))
 
 (defn extract-pitchsets-from-rule
   [rule]
@@ -416,6 +414,12 @@
 
 
 
+
+
+; ======================================================================================================================
+;                                               Testing Code
+; ======================================================================================================================
+
 (defn build-chord-transition-database [progs]
   (partition 2 1 progs))
 
@@ -449,7 +453,7 @@
 
 
 
-(def counter (atom 0))
+(def counter (atom 0)) ; for stepping through chord sequence
 
 (defn initialize-transition
   ([progressions] (initialize-transition progressions (first progressions)))
@@ -493,8 +497,7 @@
      (filterv not-empty chords)
      )))
 
-(defn- print-wide [m]
-  (binding [clojure.pprint/*print-right-margin* 200] (clojure.pprint/pprint m)))
+
 
 
 
