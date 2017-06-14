@@ -13,18 +13,18 @@
                  [[8 5] -1 3]]}
 
 
-   :3-21-a {:c1 [36 50 69 77],                               ; Chords 1 & 2 from fig 3.21a, p 90
-            :c2 [38 48 71 76],                               ;
-            :r  [[[3 3] 2  0]
+   :3-21-a {:c1 [36 50 69 77],                              ; Chords 1 & 2 from fig 3.21a, p 90
+            :c2 [38 48 71 76],                              ;
+            :r  [[[3 3] 2 0]
                  [[5 1] -2 1]
-                 [[0 0] 2  2]
+                 [[0 0] 2 2]
                  [[8 5] -1 3]]}
 
-   :3-21-c {:c1 [45 61 64 78],                               ;  ---              fig 3.21c, p 90
-            :c2 [50 58 67 76],                               ;
-            :r  [[[8 0] 5  0]
+   :3-21-c {:c1 [45 61 64 78],                              ;  ---              fig 3.21c, p 90
+            :c2 [50 58 67 76],                              ;
+            :r  [[[8 0] 5 0]
                  [[0 8] -3 1]
-                 [[3 5] 3  2]
+                 [[3 5] 3 2]
                  [[5 2] -2 3]]}
 
    :3-21-e {:c1 [36 50 69 77],                              ;  ---              fig 3.21e, p 90
@@ -52,3 +52,12 @@
     (test/testing "Create rules from chord transition"
       (map #(test/is (chord-trans %)) (vals algochords)))))
 
+(test/deftest test-synthesize-rule
+  (test/testing "Synthesize two voice-leading rules to create a new one"
+    (test/is
+      (= (apply-chord-transition (get-in algochords [:3-21-a :c1])
+                                 (synthesize-rule (create-rule (get-in algochords [:3-21-a :c1])
+                                                               (get-in algochords [:3-21-a :c2]))
+                                                  (create-rule (get-in algochords [:3-21-c :c1])
+                                                               (get-in algochords [:3-21-c :c2]))))
+                                 (get-in algochords [:3-21-e :c2])))))
