@@ -265,7 +265,7 @@
          chan (range (count b))]                            ; Uses zero-based counting, rather than Cope's 1-based
      (mapv #(vector [% %2] %3 %4) a-pc b-pc dist chan))))
 
-(defn- synthesize-rule
+(defn synthesize-rule
   "Uses voice-leading from rule-a on pitch material from rule-b"
   [rule-a rule-b]
   (let [sa        (sort-by ffirst rule-a)
