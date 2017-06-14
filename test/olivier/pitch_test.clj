@@ -5,8 +5,8 @@
 (def algochords
   ; Chords from David Cope's "The Algorithmic Composer"
   {
-   :3-20   {:c1 [60 63 65 68]                               ; Chords 1 & 2 from fig 3.20,  p 89
-            :c2 [62 65 63 67]                               ;
+   :3-20   {:c1 [60 63 65 68],                              ; Chords 1 & 2 from fig 3.20,  p 89
+            :c2 [62 65 63 67],                              ;
             :r  [[[0 0] 2 0]                                ; Rule
                  [[3 3] 2 1]
                  [[5 1] -2 2]
